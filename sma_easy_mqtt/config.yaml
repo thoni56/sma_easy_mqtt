@@ -1,6 +1,6 @@
 name: SMA Easy MQTT (SBFspot)
 slug: sma_easy_mqtt
-version: "0.1.1"
+version: "0.1.2"
 description: Publish SMA inverter data locally to MQTT via SBFspot (no cloud)
 arch: [aarch64, amd64]
 startup: services
