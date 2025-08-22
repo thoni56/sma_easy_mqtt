@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
 
+ls -l /data
+ls -l /data/options.json
+id
+
 OPTS=/data/options.json
 
 # --- Läs options ---
