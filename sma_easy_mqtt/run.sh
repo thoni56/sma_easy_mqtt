@@ -14,6 +14,16 @@ MQTT_PASS=$(jq -r '.mqtt_password // empty' "$OPTS")
 TOPIC=$(jq -r '.mqtt_topic // "sbfspot/{plantname}/{serial}"' "$OPTS")
 INTERVAL=$(jq -r '.interval_seconds // 30' "$OPTS")
 
+INV_IP=$(jq -r '.inverter_ip // empty' "$OPTS")
+INV_PW=$(jq -r '.inverter_user_password // empty' "$OPTS")
+PLANT=$(jq -r '.plant_name // "MyPlant"' "$OPTS")
+MQTT_HOST=$(jq -r '.mqtt_host // "homeassistant"' "$OPTS")
+MQTT_PORT=$(jq -r '.mqtt_port // 1883' "$OPTS")
+MQTT_USER=$(jq -r '.mqtt_username // empty' "$OPTS")
+MQTT_PASS=$(jq -r '.mqtt_password // empty' "$OPTS")
+TOPIC=$(jq -r '.mqtt_topic // "sbfspot/{plantname}/{serial}"' "$OPTS")
+INTERVAL=$(jq -r '.interval_seconds // 30' "$OPTS")
+
 # --- Validering ---
 IP_RE='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
 if [ -z "$INV_IP" ] || ! echo "$INV_IP" | grep -Eq "$IP_RE"; then
