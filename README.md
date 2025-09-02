@@ -60,7 +60,7 @@ Example MQTT payload:
   "UDC1": 748.32,
   "IDC1": 2.24
 }
-
+```
 ## Notes
 
 The first run will generate /config/sbfspot/SBFspot.default.cfg inside your HA configuration folder.
