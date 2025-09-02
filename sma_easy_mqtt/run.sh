@@ -20,6 +20,7 @@ fi
 # 2) Läs options (nu säkert)
 INV_IP=$(jq -r '.inverter_ip // empty' "$OPTS")
 INV_PW=$(jq -r '.inverter_user_password // empty' "$OPTS")
+INV_SER=$(jq -r '.inverter_serial // empty' "$OPTS")
 PLANT=$(jq -r '.plant_name // "MyPlant"' "$OPTS")
 MQTT_HOST=$(jq -r '.mqtt_host // "homeassistant"' "$OPTS")
 MQTT_PORT=$(jq -r '.mqtt_port // 1883' "$OPTS")
@@ -67,7 +68,11 @@ fi
 #   – Grundinställningar
 sed -i "s|^OutputPath=.*|OutputPath=$OUT_DIR/%Y|" "$CFG"
 sed -i "s|^OutputPathEvents=.*|OutputPathEvents=$OUT_DIR|" "$CFG"
-sed -i "s|^IP_Address=.*|IP_Address=$INV_IP|" "$CFG"
+if grep -q '^IP_Address=' "$CFG"; then
+  sed -i "s|^IP_Address=.*|IP_Address=$INV_IP|" "$CFG"
+else
+  printf '\nIP_Address=%s\n' "$INV_IP" >> "$CFG"
+fi
 sed -i "s|^Password=.*|Password=$INV_PW|" "$CFG"
 if grep -q '^Plantname=' "$CFG"; then
   sed -i "s|^Plantname=.*|Plantname=$PLANT|" "$CFG"
@@ -96,13 +101,82 @@ exec /usr/bin/mosquitto_pub ${MQTT_USER:+-u '${MQTT_USER}'} ${MQTT_PASS:+-P '${M
 EOF
 chmod +x "$WRAP"
 
-# 7) Dumpa effektiv konfig (nyckelrader)
+# 7) Availability (retained) + offline på stopp
+AVAIL_T="sma-easy-mqtt/availability"
+$WRAP -h "$MQTT_HOST" -p "$MQTT_PORT" -t "$AVAIL_T" -m "online" -r || true
+trap '$WRAP -h "$MQTT_HOST" -p "$MQTT_PORT" -t "$AVAIL_T" -m "offline" -r || true; exit 0' INT TERM EXIT
+
+# 8) Auto-publish MQTT Discovery om serial finns
+if [ -n "$SER" ]; then
+  base="homeassistant/sensor/sma_${INV_SER}"
+  state_topic="sbfspot/${PLANT}/${INV_SER}"
+  # Power
+  $WRAP -h "$MQTT_HOST" -p "$MQTT_PORT" -t "${base}/power/config" -r -m "{
+    \"name\":\"SMA Power\",
+    \"uniq_id\":\"sma_${INV_SER}_power\",
+    \"stat_t\":\"${state_topic}\",
+    \"avty_t\":\"sma-easy-mqtt/availability\",
+    \"val_tpl\":\"{{ value_json.PACTot | float(0) }}\",
+    \"unit_of_meas\":\"W\",
+    \"dev_cla\":\"power\",
+    \"stat_cla\":\"measurement\",
+    \"dev\":{\"ids\":[\"sma_${INV_SER}\"],\"name\":\"SMA Inverter ${INV_SER}\",\"mf\":\"SMA\",\"mdl\":\"STP 25000TL-30\"}
+  }"
+  # Energy Today
+  $WRAP -h "$MQTT_HOST" -p "$MQTT_PORT" -t "${base}/etoday/config" -r -m "{
+    \"name\":\"SMA Energy Today\",
+    \"uniq_id\":\"sma_${INV_SER}_etoday\",
+    \"stat_t\":\"${state_topic}\",
+    \"avty_t\":\"sma-easy-mqtt/availability\",
+    \"val_tpl\":\"{{ value_json.EToday | float(0) }}\",
+    \"unit_of_meas\":\"kWh\",
+    \"dev_cla\":\"energy\",
+    \"stat_cla\":\"total\",
+    \"dev\":{\"ids\":[\"sma_${INV_SER}\"],\"name\":\"SMA Inverter ${INV_SER}\",\"mf\":\"SMA\",\"mdl\":\"STP 25000TL-30\"}
+  }"
+  # Energy Total
+  $WRAP -h "$MQTT_HOST" -p "$MQTT_PORT" -t "${base}/etotal/config" -r -m "{
+    \"name\":\"SMA Energy Total\",
+    \"uniq_id\":\"sma_${INV_SER}_etotal\",
+    \"stat_t\":\"${state_topic}\",
+    \"avty_t\":\"sma-easy-mqtt/availability\",
+    \"val_tpl\":\"{{ value_json.ETotal | float(0) }}\",
+    \"unit_of_meas\":\"kWh\",
+    \"dev_cla\":\"energy\",
+    \"stat_cla\":\"total_increasing\",
+    \"dev\":{\"ids\":[\"sma_${INV_SER}\"],\"name\":\"SMA Inverter ${INV_SER}\",\"mf\":\"SMA\",\"mdl\":\"STP 25000TL-30\"}
+  }"
+  # Temperature
+  $WRAP -h "$MQTT_HOST" -p "$MQTT_PORT" -t "${base}/temp/config" -r -m "{
+    \"name\":\"SMA Inverter Temperature\",
+    \"uniq_id\":\"sma_${INV_INV_SER}_temp\",
+    \"stat_t\":\"${state_topic}\",
+    \"avty_t\":\"sma-easy-mqtt/availability\",
+    \"val_tpl\":\"{{ value_json.InvTemperature | float(0) }}\",
+    \"unit_of_meas\":\"°C\",
+    \"dev_cla\":\"temperature\",
+    \"stat_cla\":\"measurement\",
+    \"dev\":{\"ids\":[\"sma_${INV_SER}\"],\"name\":\"SMA Inverter ${INV_SER}\",\"mf\":\"SMA\",\"mdl\":\"STP 25000TL-30\"}
+  }"
+  # Status
+  $WRAP -h "$MQTT_HOST" -p "$MQTT_PORT" -t "${base}/status/config" -r -m "{
+    \"name\":\"SMA Status\",
+    \"uniq_id\":\"sma_${INV_SER}_status\",
+    \"stat_t\":\"${state_topic}\",
+    \"avty_t\":\"sma-easy-mqtt/availability\",
+    \"val_tpl\":\"{{ value_json.InvStatus }}\",
+    \"icon\":\"mdi:solar-power\",
+    \"dev\":{\"ids\":[\"sma_${INV_SER}\"],\"name\":\"SMA Inverter ${INV_SER}\",\"mf\":\"SMA\",\"mdl\":\"STP 25000TL-30\"}
+  }"
+fi
+
+# 9) Dumpa effektiv konfig (nyckelrader)
 echo "[sma-easy-mqtt] --- Effective config (key lines) ---"
 grep -E '^(#?BTAddress|IP_Address|MIS_Enabled|Plantname|MQTT_Host|MQTT_Port|MQTT_Topic|MQTT_Publisher)=' "$CFG" || true
 echo "[sma-easy-mqtt] -------------------------------------"
 echo "[sma-easy-mqtt] Starting loop…"
 
-# 8) Kör SBFspot i loop (OBS: ingen -ip-flagga – IP sätts i cfg)
+# 10) Kör SBFspot i loop (OBS: ingen -ip-flagga – IP sätts i cfg)
 while true; do
   /usr/local/bin/sbfspot.3/SBFspot_nosql \
     -cfg:"$CFG" \
