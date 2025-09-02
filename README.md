@@ -61,6 +61,118 @@ Example MQTT payload:
   "IDC1": 2.24
 }
 ```
+
+## Home Assistant MQTT Discovery
+
+This add-on publishes raw inverter data on:
+
+```
+sbfspot/<plant>/<serial>
+```
+
+To have Home Assistant create sensors automatically, publish **MQTT Discovery** config messages. Two options:
+
+### Option A: Automatic (recommended)
+
+1. In the add-on **Configuration**, add your inverter serial:
+
+```yaml
+inverter_serial: "1901344243"
+```
+
+2. Restart the add-on.  
+   On startup it will publish discovery configs for:
+   - **SMA Power** (`W`)
+   - **SMA Energy Today** (`kWh`)
+   - **SMA Energy Total** (`kWh`)
+   - **SMA Inverter Temperature** (`°C`)
+   - **SMA Status** (text)
+
+Availability is tracked via the retained topic `sma-easy-mqtt/availability` so sensors stay online/offline correctly.
+
+### Option B: Manual
+
+If you prefer not to store the serial in options, publish discovery yourself (once). These messages are **retained** by the broker.
+
+Replace `<serial>`, `<plant>`, `<mqtt_host>`, `<mqtt_user>`, `<mqtt_pass>`:
+
+```bash
+# Power
+mosquitto_pub -h <mqtt_host> -u <mqtt_user> -P '<mqtt_pass>' \
+ -t homeassistant/sensor/sma_<serial>/power/config -r -m '{
+  "name":"SMA Power",
+  "uniq_id":"sma_<serial>_power",
+  "stat_t":"sbfspot/<plant>/<serial>",
+  "avty_t":"sma-easy-mqtt/availability",
+  "val_tpl":"{{ value_json.PACTot | float(0) }}",
+  "unit_of_meas":"W",
+  "dev_cla":"power",
+  "stat_cla":"measurement",
+  "dev":{"ids":["sma_<serial>"],"name":"SMA Inverter <serial>","mf":"SMA","mdl":"STP 25000TL-30"}
+}'
+
+# Energy Today
+mosquitto_pub -h <mqtt_host> -u <mqtt_user> -P '<mqtt_pass>' \
+ -t homeassistant/sensor/sma_<serial>/etoday/config -r -m '{
+  "name":"SMA Energy Today",
+  "uniq_id":"sma_<serial>_etoday",
+  "stat_t":"sbfspot/<plant>/<serial>",
+  "avty_t":"sma-easy-mqtt/availability",
+  "val_tpl":"{{ value_json.EToday | float(0) }}",
+  "unit_of_meas":"kWh",
+  "dev_cla":"energy",
+  "stat_cla":"total",
+  "dev":{"ids":["sma_<serial>"],"name":"SMA Inverter <serial>","mf":"SMA","mdl":"STP 25000TL-30"}
+}'
+
+# Energy Total
+mosquitto_pub -h <mqtt_host> -u <mqtt_user> -P '<mqtt_pass>' \
+ -t homeassistant/sensor/sma_<serial>/etotal/config -r -m '{
+  "name":"SMA Energy Total",
+  "uniq_id":"sma_<serial>_etotal",
+  "stat_t":"sbfspot/<plant>/<serial>",
+  "avty_t":"sma-easy-mqtt/availability",
+  "val_tpl":"{{ value_json.ETotal | float(0) }}",
+  "unit_of_meas":"kWh",
+  "dev_cla":"energy",
+  "stat_cla":"total_increasing",
+  "dev":{"ids":["sma_<serial>"],"name":"SMA Inverter <serial>","mf":"SMA","mdl":"STP 25000TL-30"}
+}'
+
+# Inverter Temperature
+mosquitto_pub -h <mqtt_host> -u <mqtt_user> -P '<mqtt_pass>' \
+ -t homeassistant/sensor/sma_<serial>/temp/config -r -m '{
+  "name":"SMA Inverter Temperature",
+  "uniq_id":"sma_<serial>_temp",
+  "stat_t":"sbfspot/<plant>/<serial>",
+  "avty_t":"sma-easy-mqtt/availability",
+  "val_tpl":"{{ value_json.InvTemperature | float(0) }}",
+  "unit_of_meas":"°C",
+  "dev_cla":"temperature",
+  "stat_cla":"measurement",
+  "dev":{"ids":["sma_<serial>"],"name":"SMA Inverter <serial>","mf":"SMA","mdl":"STP 25000TL-30"}
+}'
+
+# Status
+mosquitto_pub -h <mqtt_host> -u <mqtt_user> -P '<mqtt_pass>' \
+ -t homeassistant/sensor/sma_<serial>/status/config -r -m '{
+  "name":"SMA Status",
+  "uniq_id":"sma_<serial>_status",
+  "stat_t":"sbfspot/<plant>/<serial>",
+  "avty_t":"sma-easy-mqtt/availability",
+  "val_tpl":"{{ value_json.InvStatus }}",
+  "icon":"mdi:solar-power",
+  "dev":{"ids":["sma_<serial>"],"name":"SMA Inverter <serial>","mf":"SMA","mdl":"STP 25000TL-30"}
+}'
+```
+
+**Change discovery later?** Clear the retained config first, then republish:
+
+```bash
+mosquitto_pub -h <mqtt_host> -u <mqtt_user> -P '<mqtt_pass>' \
+ -t homeassistant/sensor/sma_<serial>/power/config -r -n
+```
+
 ## Notes
 
 The first run will generate /config/sbfspot/SBFspot.default.cfg inside your HA configuration folder.
