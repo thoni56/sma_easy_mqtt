@@ -5,7 +5,7 @@ echo "[sma-easy-mqtt] PID=$$ started at $(date)"
 
 OPTS=/data/options.json
 
-# 1) Vänta max 10s på att /data/options.json blir läsbar
+# 1) Wait max 10s for /data/options.json to become readable
 for i in $(seq 1 10); do
   [ -r "$OPTS" ] && break
   [ "$i" -eq 1 ] && echo "[sma-easy-mqtt] Waiting for $OPTS to become readable..."
@@ -17,7 +17,7 @@ if [ ! -r "$OPTS" ]; then
   exit 1
 fi
 
-# 2) Läs options (nu säkert)
+# 2) Now we can read options
 INV_IP=$(jq -r '.inverter_ip // empty' "$OPTS")
 INV_PW=$(jq -r '.inverter_user_password // empty' "$OPTS")
 INV_SER=$(jq -r '.inverter_serial // empty' "$OPTS")
@@ -43,7 +43,7 @@ echo "  mqtt_topic=${TOPIC}"
 echo "  interval_seconds=${INTERVAL}"
 echo "  debug=${DEBUG}"
 
-# 3) Validering
+# 3) Validation
 IP_RE='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
 echo "$INV_IP" | grep -Eq "$IP_RE" || { echo "[sma-easy-mqtt] ERROR: invalid inverter_ip '$INV_IP'"; exit 1; }
 [ -n "$TOPIC" ] || { echo "[sma-easy-mqtt] ERROR: mqtt_topic must not be empty"; exit 1; }
@@ -57,8 +57,7 @@ mkdir -p "$OUT_DIR"
 
 [ -f "$CFG" ] || cp /usr/local/bin/sbfspot.3/SBFspot.default.cfg "$CFG"
 
-# 5) Tvinga Speedwire (ingen BT) och patcha konfig
-#   – kommentera BTAddress om den finns
+# 5) Force Speedwire (no Bluetooth) and patch config
 sed -i 's/^[[:space:]]*BTAddress=.*/#BTAddress=00:00:00:00:00:00/' "$CFG"
 #   – MIS_Enabled=1
 if grep -q '^MIS_Enabled=' "$CFG"; then
@@ -67,7 +66,7 @@ else
   printf '\nMIS_Enabled=1\n' >> "$CFG"
 fi
 
-#   – Grundinställningar
+#   – Basic settings
 sed -i "s|^OutputPath=.*|OutputPath=$OUT_DIR/%Y|" "$CFG"
 sed -i "s|^OutputPathEvents=.*|OutputPathEvents=$OUT_DIR|" "$CFG"
 if grep -q '^IP_Address=' "$CFG"; then
@@ -82,7 +81,7 @@ else
   printf '\nPlantname=%s\n' "$PLANT" >> "$CFG"
 fi
 
-#   – MQTT via wrapper (auth injiceras här)
+#   – MQTT via wrapper (auth injected here)
 sed -i "s|^MQTT_Host=.*|MQTT_Host=$MQTT_HOST|" "$CFG"
 sed -i "s|^MQTT_Port=.*|MQTT_Port=$MQTT_PORT|" "$CFG"
 sed -i "s|^MQTT_Topic=.*|MQTT_Topic=$TOPIC|" "$CFG"
@@ -94,19 +93,19 @@ else
   printf '\nDecimalPoint=point\n' >> "$CFG"
 fi
 
-# 6) Wrapper för mosquitto_pub med auth
+# 6) Wrapper for mosquitto_pub with auth
 cat > "$WRAP" <<EOF
 #!/bin/sh
 exec /usr/bin/mosquitto_pub ${MQTT_USER:+-u '${MQTT_USER}'} ${MQTT_PASS:+-P '${MQTT_PASS}'} "\$@"
 EOF
 chmod +x "$WRAP"
 
-# 7) Availability (retained) + offline på stopp
+# 7) Availability (retained)
 AVAIL_T="sma-easy-mqtt/availability"
 $WRAP -h "$MQTT_HOST" -p "$MQTT_PORT" -t "$AVAIL_T" -m "online" -r || true
 trap '$WRAP -h "$MQTT_HOST" -p "$MQTT_PORT" -t "$AVAIL_T" -m "offline" -r || true; exit 0' INT TERM EXIT
 
-# 8) Auto-publish MQTT Discovery om serial finns
+# 8) Auto-publish MQTT Discovery if serial exists
 if [ -n "$SER" ]; then
   base="homeassistant/sensor/sma_${INV_SER}"
   state_topic="sbfspot/${PLANT}/${INV_SER}"
@@ -170,13 +169,13 @@ if [ -n "$SER" ]; then
   }"
 fi
 
-# 9) Dumpa effektiv konfig (nyckelrader)
+# 9) Dump effective config (key values)
 echo "[sma-easy-mqtt] --- Effective config (key lines) ---"
 grep -E '^(#?BTAddress|IP_Address|MIS_Enabled|Plantname|MQTT_Host|MQTT_Port|MQTT_Topic|MQTT_Publisher)=' "$CFG" || true
 echo "[sma-easy-mqtt] -------------------------------------"
 echo "[sma-easy-mqtt] Starting loop…"
 
-# 10) Kör SBFspot i loop (OBS: ingen -ip-flagga – IP sätts i cfg)
+# 10) Run SBFspot in a loop
 SBF_ARGS="-cfg:$CFG -mqtt -ad0 -am0 -ae0 -nocsv -nosql -finq"
 [ "$DEBUG" = "true" ] && SBF_ARGS="-cfg:$CFG -v5 -mqtt -ad0 -am0 -ae0 -nocsv -nosql -finq"
 
