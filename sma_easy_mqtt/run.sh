@@ -28,6 +28,7 @@ MQTT_USER=$(jq -r '.mqtt_username // empty' "$OPTS")
 MQTT_PASS=$(jq -r '.mqtt_password // empty' "$OPTS")
 TOPIC=$(jq -r '.mqtt_topic // "sbfspot/{plantname}/{serial}"' "$OPTS")
 INTERVAL=$(jq -r '.interval_seconds // 30' "$OPTS")
+DEBUG=$(jq -r '.debug // false' /data/options.json)
 
 echo "[sma-easy-mqtt] UID=$(id -u) GID=$(id -g)"
 echo "[sma-easy-mqtt] Options:"
@@ -40,6 +41,7 @@ echo "  mqtt_username=${MQTT_USER}"
 [ -n "$MQTT_PASS" ] && echo "  mqtt_password=********" || echo "  mqtt_password=(empty)"
 echo "  mqtt_topic=${TOPIC}"
 echo "  interval_seconds=${INTERVAL}"
+echo "  debug=${DEBUG}"
 
 # 3) Validering
 IP_RE='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
@@ -85,9 +87,7 @@ sed -i "s|^MQTT_Host=.*|MQTT_Host=$MQTT_HOST|" "$CFG"
 sed -i "s|^MQTT_Port=.*|MQTT_Port=$MQTT_PORT|" "$CFG"
 sed -i "s|^MQTT_Topic=.*|MQTT_Topic=$TOPIC|" "$CFG"
 sed -i "s|^MQTT_Publisher=.*|MQTT_Publisher=$WRAP|" "$CFG"
-# Live-data: ingen retain (ta bort -r). JSON-format.
 sed -i 's|^MQTT_PublisherArgs=.*|MQTT_PublisherArgs=-h {host} -t {topic} -m "{{message}}"|' "$CFG"
-# Säkra decimalpunkt i JSON
 if grep -q '^DecimalPoint=' "$CFG"; then
   sed -i "s|^DecimalPoint=.*|DecimalPoint=point|" "$CFG"
 else
@@ -177,9 +177,11 @@ echo "[sma-easy-mqtt] -------------------------------------"
 echo "[sma-easy-mqtt] Starting loop…"
 
 # 10) Kör SBFspot i loop (OBS: ingen -ip-flagga – IP sätts i cfg)
+SBF_ARGS="-cfg:$CFG -mqtt -ad0 -am0 -ae0 -nocsv -nosql -finq"
+[ "$DEBUG" = "true" ] && SBF_ARGS="-cfg:$CFG -v5 -mqtt -ad0 -am0 -ae0 -nocsv -nosql -finq"
+
 while true; do
-  /usr/local/bin/sbfspot.3/SBFspot_nosql \
-    -cfg:"$CFG" \
-    -mqtt -ad0 -am0 -ae0 -nocsv -nosql -finq
+  echo "[sma-easy-mqtt] $(date '+%F %T') tick (debug=$DEBUG)"
+  /usr/local/bin/sbfspot.3/SBFspot_nosql $SBF_ARGS
   sleep "$INTERVAL"
 done
